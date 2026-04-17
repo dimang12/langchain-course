@@ -3,11 +3,13 @@ import os
 from datetime import datetime
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Query, UploadFile, File, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File, HTTPException
 
+from app.auth.jwt_handler import get_current_user
 from app.config import settings
 from app.ingestion.processor import DocumentProcessor
 from app.ingestion.embedder import embed_and_store, delete_source_embeddings
+from app.models.user import User
 
 router = APIRouter()
 
@@ -72,9 +74,9 @@ def _process_document(source_id: str, file_path: str, user_id: str) -> None:
 async def upload(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    user_id: str = Query("default"),
+    user: User = Depends(get_current_user),
 ):
-    user_dir = os.path.join(settings.UPLOAD_DIR, user_id)
+    user_dir = os.path.join(settings.UPLOAD_DIR, user.id)
     os.makedirs(user_dir, exist_ok=True)
 
     file_path = os.path.join(user_dir, file.filename)
@@ -93,30 +95,30 @@ async def upload(
         "error": None,
     }
 
-    sources = _read_sources(user_id)
+    sources = _read_sources(user.id)
     sources.append(source_entry)
-    _write_sources(user_id, sources)
+    _write_sources(user.id, sources)
 
-    background_tasks.add_task(_process_document, source_id, file_path, user_id)
+    background_tasks.add_task(_process_document, source_id, file_path, user.id)
 
     return {"job_id": source_id, "filename": file.filename}
 
 
 @router.get("/sources")
-async def list_sources(user_id: str = Query("default")):
-    sources = _read_sources(user_id)
+async def list_sources(user: User = Depends(get_current_user)):
+    sources = _read_sources(user.id)
     return sources
 
 
 @router.delete("/sources/{source_id}")
-async def delete_source(source_id: str, user_id: str = Query("default")):
-    sources = _read_sources(user_id)
+async def delete_source(source_id: str, user: User = Depends(get_current_user)):
+    sources = _read_sources(user.id)
     source = _find_source(sources, source_id)
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
     try:
-        delete_source_embeddings(user_id, source["file_path"])
+        delete_source_embeddings(user.id, source["file_path"])
     except Exception:
         pass
 
@@ -124,14 +126,14 @@ async def delete_source(source_id: str, user_id: str = Query("default")):
         os.remove(source["file_path"])
 
     sources = [s for s in sources if s["id"] != source_id]
-    _write_sources(user_id, sources)
+    _write_sources(user.id, sources)
 
     return {"status": "deleted"}
 
 
 @router.get("/status/{job_id}")
-async def job_status(job_id: str, user_id: str = Query("default")):
-    sources = _read_sources(user_id)
+async def job_status(job_id: str, user: User = Depends(get_current_user)):
+    sources = _read_sources(user.id)
     source = _find_source(sources, job_id)
     if not source:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -141,9 +143,9 @@ async def job_status(job_id: str, user_id: str = Query("default")):
 @router.post("/reindex")
 async def reindex(
     background_tasks: BackgroundTasks,
-    user_id: str = Query("default"),
+    user: User = Depends(get_current_user),
 ):
-    sources = _read_sources(user_id)
+    sources = _read_sources(user.id)
     completed = [s for s in sources if s["status"] == "complete"]
 
     for source in completed:
@@ -151,9 +153,9 @@ async def reindex(
         source["chunks"] = None
         source["error"] = None
         background_tasks.add_task(
-            _process_document, source["id"], source["file_path"], user_id
+            _process_document, source["id"], source["file_path"], user.id
         )
 
-    _write_sources(user_id, sources)
+    _write_sources(user.id, sources)
 
     return {"status": "reindexing", "count": len(completed)}

@@ -50,6 +50,7 @@ rag_assistant/windows/flutter/ephemeral/
 *.sqlite
 chroma_data/
 postgres_data/
+rag-backend/data/
 
 # OS
 .DS_Store

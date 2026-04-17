@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'constants.dart';
 import 'auth_interceptor.dart';
 
@@ -25,4 +26,10 @@ class ApiClient {
   void setToken(String? token) {
     authInterceptor.setToken(token);
   }
+
+  void setRefreshToken(String? token) {
+    authInterceptor.setRefreshToken(token);
+  }
 }
+
+final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());

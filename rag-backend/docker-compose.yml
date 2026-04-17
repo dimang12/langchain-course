@@ -4,40 +4,42 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://rag:rag@db:5432/rag
+      - DATABASE_URL=postgresql+asyncpg://rag:rag@db:5432/rag
       - REDIS_URL=redis://cache:6379/0
       - CHROMA_PATH=/data/chroma
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - UPLOAD_DIR=/data/uploads
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
     volumes:
       - chroma_data:/data/chroma
+      - upload_data:/data/uploads
     depends_on:
-      - db
-      - cache
-
-  worker:
-    build: .
-    command: celery -A app.worker worker --loglevel=info
-    environment:
-      - DATABASE_URL=postgresql://rag:rag@db:5432/rag
-      - REDIS_URL=redis://cache:6379/0
-      - CHROMA_PATH=/data/chroma
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-    depends_on:
-      - db
-      - cache
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_started
+    restart: unless-stopped
 
   db:
-    image: postgres:16
+    image: postgres:16-alpine
     environment:
       - POSTGRES_USER=rag
       - POSTGRES_PASSWORD=rag
       - POSTGRES_DB=rag
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
   cache:
     image: redis:7-alpine
+    restart: unless-stopped
 
 volumes:
   chroma_data:
+  upload_data:
   postgres_data:
