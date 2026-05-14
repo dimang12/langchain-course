@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import uuid
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -176,20 +180,142 @@ async def list_events(
 
     result = await db.execute(stmt)
     events = result.scalars().all()
-    return [
-        {
-            "id": e.id,
-            "provider_event_id": e.provider_event_id,
-            "title": e.title,
-            "description": e.description,
-            "start_time": e.start_time.isoformat(),
-            "end_time": e.end_time.isoformat(),
-            "is_all_day": e.is_all_day,
-            "location": e.location,
-            "meeting_url": e.meeting_url,
-            "attendees": e.attendees,
-            "organizer": e.organizer,
-            "status": e.status,
-        }
-        for e in events
-    ]
+    return [_event_to_dict(e) for e in events]
+
+
+def _event_to_dict(e: CalendarEvent) -> dict:
+    return {
+        "id": e.id,
+        "provider": e.provider,
+        "provider_event_id": e.provider_event_id,
+        "title": e.title,
+        "description": e.description,
+        "start_time": e.start_time.isoformat(),
+        "end_time": e.end_time.isoformat(),
+        "is_all_day": e.is_all_day,
+        "location": e.location,
+        "meeting_url": e.meeting_url,
+        "attendees": e.attendees,
+        "organizer": e.organizer,
+        "status": e.status,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Create / Update / Delete events
+# ---------------------------------------------------------------------------
+class CreateEventRequest(BaseModel):
+    title: str
+    start_time: str
+    end_time: str
+    description: str | None = None
+    is_all_day: bool = False
+    location: str | None = None
+    meeting_url: str | None = None
+    attendees: list[str] | None = None
+
+
+class UpdateEventRequest(BaseModel):
+    title: str | None = None
+    start_time: str | None = None
+    end_time: str | None = None
+    description: str | None = None
+    is_all_day: bool | None = None
+    location: str | None = None
+    meeting_url: str | None = None
+    attendees: list[str] | None = None
+    status: str | None = None
+
+
+@router.post("/events")
+async def create_event(
+    request: CreateEventRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        start = datetime.fromisoformat(request.start_time)
+        end = datetime.fromisoformat(request.end_time)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid datetime format")
+
+    event = CalendarEvent(
+        user_id=user.id,
+        provider="local",
+        provider_event_id=f"local-{uuid.uuid4()}",
+        title=request.title,
+        description=request.description,
+        start_time=start,
+        end_time=end,
+        is_all_day=request.is_all_day,
+        location=request.location,
+        meeting_url=request.meeting_url,
+        attendees=request.attendees,
+        status="confirmed",
+    )
+    db.add(event)
+    await db.commit()
+    await db.refresh(event)
+    return _event_to_dict(event)
+
+
+@router.put("/events/{event_id}")
+async def update_event(
+    event_id: str,
+    request: UpdateEventRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(CalendarEvent).where(
+            CalendarEvent.id == event_id,
+            CalendarEvent.user_id == user.id,
+        )
+    )
+    event = result.scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    if request.title is not None:
+        event.title = request.title
+    if request.description is not None:
+        event.description = request.description
+    if request.start_time is not None:
+        event.start_time = datetime.fromisoformat(request.start_time)
+    if request.end_time is not None:
+        event.end_time = datetime.fromisoformat(request.end_time)
+    if request.is_all_day is not None:
+        event.is_all_day = request.is_all_day
+    if request.location is not None:
+        event.location = request.location
+    if request.meeting_url is not None:
+        event.meeting_url = request.meeting_url
+    if request.attendees is not None:
+        event.attendees = request.attendees
+    if request.status is not None:
+        event.status = request.status
+
+    await db.commit()
+    await db.refresh(event)
+    return _event_to_dict(event)
+
+
+@router.delete("/events/{event_id}")
+async def delete_event(
+    event_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(CalendarEvent).where(
+            CalendarEvent.id == event_id,
+            CalendarEvent.user_id == user.id,
+        )
+    )
+    event = result.scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    await db.delete(event)
+    await db.commit()
+    return {"status": "deleted"}

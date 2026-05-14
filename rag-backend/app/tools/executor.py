@@ -1,8 +1,12 @@
 import os
-from sqlalchemy import select, or_
+from datetime import datetime
+
+from sqlalchemy import desc, func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.meetings.service import create_meeting, finalize_meeting
 from app.memory.service import MemoryLayer
+from app.models.meetings import Meeting
 from app.models.workspace import TreeNode
 
 
@@ -24,11 +28,119 @@ async def execute_tool(tool_name: str, args: dict, user_id: str, db: AsyncSessio
         "create_goal": _create_goal,
         "update_goal_status": _update_goal_status,
         "mark_followup_done": _mark_followup_done,
+        "complete_brief_task": _complete_brief_task,
+        "create_meeting_doc": _create_meeting_doc,
+        "finalize_meeting": _finalize_meeting,
+        "list_meetings": _list_meetings,
+        "summarize_meeting": _summarize_meeting,
     }
     handler = handlers.get(tool_name)
     if not handler:
         return f"Unknown tool: {tool_name}"
     return await handler(args, user_id, db)
+
+
+async def _resolve_meeting(args: dict, user_id: str, db: AsyncSession) -> Meeting | None:
+    meeting_id = args.get("meeting_id")
+    if meeting_id:
+        meeting = await db.get(Meeting, meeting_id)
+        if meeting is not None and meeting.user_id == user_id:
+            return meeting
+    title_match = (args.get("title_match") or "").strip()
+    if title_match:
+        result = await db.execute(
+            select(Meeting)
+            .where(
+                Meeting.user_id == user_id,
+                func.lower(Meeting.title).like(f"%{title_match.lower()}%"),
+            )
+            .order_by(desc(Meeting.created_at))
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+    return None
+
+
+async def _create_meeting_doc(args: dict, user_id: str, db: AsyncSession) -> str:
+    title = (args.get("title") or "").strip()
+    if not title:
+        return "Need a meeting title to create a doc."
+    scheduled_at_str = args.get("scheduled_at")
+    scheduled_at: datetime | None = None
+    if scheduled_at_str:
+        try:
+            scheduled_at = datetime.fromisoformat(scheduled_at_str.replace("Z", "+00:00"))
+        except ValueError:
+            scheduled_at = None
+    attendees_in = args.get("attendees") or []
+    attendees = [{"name": a} if isinstance(a, str) else a for a in attendees_in]
+
+    meeting = await create_meeting(
+        db,
+        user_id=user_id,
+        title=title,
+        scheduled_at=scheduled_at,
+        attendees=attendees or None,
+    )
+    when = (
+        scheduled_at.strftime("%a %b %d, %H:%M") if scheduled_at else "no scheduled time"
+    )
+    return (
+        f"Created meeting doc '{title}' ({when}). "
+        f"Meeting ID: {meeting.id}. Doc lives under Meetings/."
+    )
+
+
+async def _finalize_meeting(args: dict, user_id: str, db: AsyncSession) -> str:
+    meeting = await _resolve_meeting(args, user_id, db)
+    if meeting is None:
+        return "Could not find a meeting matching the provided ID or title."
+    try:
+        result = await finalize_meeting(db, user_id=user_id, meeting=meeting)
+    except ValueError as exc:
+        return f"Could not finalize: {exc}"
+    return (
+        f"Finalized '{meeting.title}'. "
+        f"Extracted {result['decisions_extracted']} decisions, "
+        f"{result['follow_ups_extracted']} follow-ups, "
+        f"{result['goals_extracted']} goals, "
+        f"{result['people_extracted']} people."
+    )
+
+
+async def _list_meetings(args: dict, user_id: str, db: AsyncSession) -> str:
+    status = args.get("status")
+    limit = int(args.get("limit") or 10)
+    stmt = select(Meeting).where(Meeting.user_id == user_id)
+    if status in {"draft", "finalized"}:
+        stmt = stmt.where(Meeting.status == status)
+    stmt = stmt.order_by(desc(Meeting.scheduled_at), desc(Meeting.created_at)).limit(limit)
+    result = await db.execute(stmt)
+    meetings = result.scalars().all()
+    if not meetings:
+        return "No meetings found."
+    lines = []
+    for m in meetings:
+        when = m.scheduled_at.strftime("%Y-%m-%d %H:%M") if m.scheduled_at else "—"
+        lines.append(f"- {when} · {m.title} · {m.status} (id: {m.id})")
+    return "\n".join(lines)
+
+
+async def _summarize_meeting(args: dict, user_id: str, db: AsyncSession) -> str:
+    meeting = await _resolve_meeting(args, user_id, db)
+    if meeting is None:
+        return "Could not find a meeting matching the provided ID or title."
+    if meeting.tree_node_id is None:
+        return f"Meeting '{meeting.title}' has no doc."
+    doc = await db.get(TreeNode, meeting.tree_node_id)
+    if doc is None or doc.user_id != user_id:
+        return "Meeting doc not found."
+    body = doc.content or ""
+    parts = [f"# {meeting.title} ({meeting.status})"]
+    if meeting.scheduled_at:
+        parts.append(f"When: {meeting.scheduled_at.strftime('%Y-%m-%d %H:%M')}")
+    parts.append(body)
+    return "\n\n".join(parts)
 
 
 async def _read_file(args: dict, user_id: str, db: AsyncSession) -> str:
@@ -497,3 +609,69 @@ async def _mark_followup_done(args: dict, user_id: str, db: AsyncSession) -> str
     followup.status = "done"
     await db.commit()
     return f"Marked follow-up as done: {followup.description}"
+
+
+async def _complete_brief_task(args: dict, user_id: str, db: AsyncSession) -> str:
+    from app.models.agent_run import AgentRun
+
+    completed = args.get("completed", True)
+    task_text = (args.get("task_text") or "").strip().lower()
+    task_index = args.get("task_index")
+
+    # Find the latest successful daily brief
+    result = await db.execute(
+        select(AgentRun)
+        .where(
+            AgentRun.user_id == user_id,
+            AgentRun.agent_name == "daily_brief",
+            AgentRun.status == "success",
+        )
+        .order_by(AgentRun.started_at.desc())
+        .limit(1)
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        return "No daily brief found. Generate one first."
+
+    priorities = (run.output_payload or {}).get("top_priorities", [])
+    if not priorities:
+        return "No priorities in the latest brief."
+
+    # Resolve index from text if needed
+    if task_index is not None:
+        idx = int(task_index)
+    elif task_text:
+        # Fuzzy match: find best matching priority
+        best_idx, best_score = -1, 0
+        for i, p in enumerate(priorities):
+            p_lower = p.lower()
+            # Simple word overlap scoring
+            task_words = set(task_text.split())
+            p_words = set(p_lower.split())
+            overlap = len(task_words & p_words)
+            if overlap > best_score:
+                best_score = overlap
+                best_idx = i
+            # Substring match
+            if task_text in p_lower or p_lower in task_text:
+                best_idx = i
+                break
+        if best_idx < 0:
+            return f"Could not match '{task_text}' to any priority. Current priorities:\n" + \
+                "\n".join(f"  {i}. {p}" for i, p in enumerate(priorities))
+        idx = best_idx
+    else:
+        return "Provide either task_text or task_index to identify which priority to complete."
+
+    if idx < 0 or idx >= len(priorities):
+        return f"Invalid index {idx}. Brief has {len(priorities)} priorities (0-{len(priorities)-1})."
+
+    completions = list(run.task_completions or [False] * len(priorities))
+    while len(completions) < len(priorities):
+        completions.append(False)
+    completions[idx] = completed
+    run.task_completions = completions
+    await db.commit()
+
+    status_word = "completed" if completed else "reopened"
+    return f"Marked priority #{idx+1} as {status_word}: {priorities[idx]}"

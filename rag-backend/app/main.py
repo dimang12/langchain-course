@@ -17,6 +17,8 @@ from app.agents.router import router as agents_router
 from app.agents.scheduler import start_scheduler, shutdown_scheduler
 from app.connectors.router import router as connectors_router
 from app.knowledge.router import router as knowledge_router
+from app.todos.router import router as todos_router
+from app.meetings.router import router as meetings_router
 import app.models  # noqa: F401
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
@@ -59,6 +61,8 @@ app.include_router(memory_router, prefix="/api/v1/memory", tags=["memory"])
 app.include_router(agents_router, prefix="/api/v1/agents", tags=["agents"])
 app.include_router(connectors_router, prefix="/api/v1/connectors", tags=["connectors"])
 app.include_router(knowledge_router, prefix="/api/v1/knowledge", tags=["knowledge"])
+app.include_router(todos_router, prefix="/api/v1/todos", tags=["todos"])
+app.include_router(meetings_router, prefix="/api/v1/meetings", tags=["meetings"])
 
 
 @app.get("/health")

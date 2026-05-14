@@ -21,6 +21,9 @@ dependencies:
   flutter_markdown: ^0.7.0
   markdown: ^7.0.0
   hive_flutter: ^1.1.0
+  flutter_quill: ^9.2.3
+  vsc_quill_delta_to_html: ^1.0.5
+  dart_quill_delta: ^0.0.1
 
 dev_dependencies:
   flutter_test:

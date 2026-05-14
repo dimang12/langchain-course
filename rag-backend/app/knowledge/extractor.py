@@ -50,19 +50,17 @@ Rules:
 """
 
 
-async def extract_structured(
+async def _extract_and_persist(
     content: str,
     user_id: str,
     db: AsyncSession,
-    source: str = "extracted",
-    source_ref: str | None = None,
-) -> dict[str, int]:
-    """Extract entities from text and upsert into knowledge graph.
-
-    Returns counts of newly created entities per type.
-    """
+    source: str,
+    source_ref: str | None,
+) -> dict[str, list]:
+    """Core extraction: call LLM, deduplicate, persist. Returns the new entities."""
+    empty: dict[str, list] = {"goals": [], "decisions": [], "follow_ups": [], "people": []}
     if not content or len(content.strip()) < 20:
-        return {"goals": 0, "decisions": 0, "follow_ups": 0, "people": 0}
+        return empty
 
     client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
@@ -81,9 +79,9 @@ async def extract_structured(
         data = json.loads(raw)
     except Exception as exc:
         logger.warning("Extraction LLM call failed: %s", exc)
-        return {"goals": 0, "decisions": 0, "follow_ups": 0, "people": 0}
+        return empty
 
-    counts = {"goals": 0, "decisions": 0, "follow_ups": 0, "people": 0}
+    created: dict[str, list] = {"goals": [], "decisions": [], "follow_ups": [], "people": []}
 
     for g in data.get("goals") or []:
         if not g.get("title"):
@@ -101,7 +99,7 @@ async def extract_structured(
             source_ref=source_ref,
         )
         db.add(goal)
-        counts["goals"] += 1
+        created["goals"].append(goal)
 
     for d in data.get("decisions") or []:
         if not d.get("title"):
@@ -117,7 +115,7 @@ async def extract_structured(
             source_ref=source_ref,
         )
         db.add(decision)
-        counts["decisions"] += 1
+        created["decisions"].append(decision)
 
     for f in data.get("follow_ups") or []:
         if not f.get("description"):
@@ -133,7 +131,7 @@ async def extract_structured(
             source_ref=source_ref,
         )
         db.add(followup)
-        counts["follow_ups"] += 1
+        created["follow_ups"].append(followup)
 
     for p in data.get("people") or []:
         if not p.get("name"):
@@ -149,10 +147,40 @@ async def extract_structured(
             source=source,
         )
         db.add(person)
-        counts["people"] += 1
+        created["people"].append(person)
 
     await db.commit()
-    return counts
+    return created
+
+
+async def extract_structured(
+    content: str,
+    user_id: str,
+    db: AsyncSession,
+    source: str = "extracted",
+    source_ref: str | None = None,
+) -> dict[str, int]:
+    """Extract entities from text and upsert into knowledge graph.
+
+    Returns counts of newly created entities per type.
+    """
+    created = await _extract_and_persist(content, user_id, db, source, source_ref)
+    return {k: len(v) for k, v in created.items()}
+
+
+async def extract_and_collect(
+    content: str,
+    user_id: str,
+    db: AsyncSession,
+    source: str = "meeting",
+    source_ref: str | None = None,
+) -> dict[str, list]:
+    """Same as extract_structured but returns the actual entity rows.
+
+    Used by the meeting finalize pipeline so the caller can render the extracted
+    entities back into the meeting doc.
+    """
+    return await _extract_and_persist(content, user_id, db, source, source_ref)
 
 
 # ---------------------------------------------------------------------------

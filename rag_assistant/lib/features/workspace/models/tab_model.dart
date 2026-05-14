@@ -5,6 +5,7 @@ class TabModel {
   final String title;
   final String? fileType;
   final bool isModified;
+  final int reloadCounter;
 
   const TabModel({
     required this.id,
@@ -13,9 +14,10 @@ class TabModel {
     required this.title,
     this.fileType,
     this.isModified = false,
+    this.reloadCounter = 0,
   });
 
-  TabModel copyWith({bool? isModified}) {
+  TabModel copyWith({bool? isModified, int? reloadCounter}) {
     return TabModel(
       id: id,
       nodeId: nodeId,
@@ -23,6 +25,7 @@ class TabModel {
       title: title,
       fileType: fileType,
       isModified: isModified ?? this.isModified,
+      reloadCounter: reloadCounter ?? this.reloadCounter,
     );
   }
 }

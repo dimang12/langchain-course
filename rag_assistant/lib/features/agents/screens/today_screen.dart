@@ -4,6 +4,7 @@ import '../models/agent_run_model.dart';
 import '../providers/agents_provider.dart';
 import '../widgets/activity_feed.dart';
 import '../widgets/brief_card.dart';
+import '../widgets/prioritizer_card.dart';
 
 class TodayScreen extends ConsumerStatefulWidget {
   const TodayScreen({super.key});
@@ -22,15 +23,15 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
   }
 
   Future<void> _trigger() async {
-    final run = await ref.read(agentsProvider.notifier).triggerDailyBrief();
+    final run = await ref.read(agentsProvider.notifier).triggerPrioritizer();
     if (!mounted) return;
     if (run != null && run.status == 'success') {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Brief generated')),
+        const SnackBar(content: Text('Priorities ready')),
       );
     } else if (run?.errorMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Brief failed: ${run!.errorMessage}')),
+        SnackBar(content: Text('Prioritizer failed: ${run!.errorMessage}')),
       );
     }
   }
@@ -38,13 +39,14 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(agentsProvider);
-    final latest = state.latestDailyBrief;
+    final prioritizer = state.latestPrioritizer;
+    final legacy = state.latestDailyBrief;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 900;
 
-        final mainColumn = _mainColumn(latest, state.isTriggering);
+        final mainColumn = _mainColumn(prioritizer, legacy, state.isTriggering);
         final feedColumn = _feedColumn();
 
         if (isWide) {
@@ -118,7 +120,7 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
     );
   }
 
-  Widget _mainColumn(AgentRunModel? run, bool isTriggering) {
+  Widget _mainColumn(AgentRunModel? prioritizer, AgentRunModel? legacy, bool isTriggering) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -160,16 +162,16 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
                     )
                   : const Icon(Icons.auto_awesome, size: 18),
               label: Text(
-                isTriggering ? 'Generating…' : 'Generate Brief',
+                isTriggering ? 'Thinking…' : 'Prioritize',
               ),
             ),
           ],
         ),
         const SizedBox(height: 24),
-        if (run != null)
-          BriefCard(run: run)
-        else
-          _emptyBrief(),
+        if (prioritizer != null) PrioritizerCard(run: prioritizer),
+        if (prioritizer != null && legacy != null) const SizedBox(height: 16),
+        if (legacy != null) BriefCard(run: legacy),
+        if (prioritizer == null && legacy == null) _emptyBrief(),
       ],
     );
   }

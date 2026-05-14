@@ -28,7 +28,8 @@ from app.config import settings
 from app.memory.service import MemoryLayer
 from app.models.agent_run import AgentRun
 from app.models.connectors import CalendarEvent
-from app.models.knowledge import FollowUp, Goal
+from app.models.knowledge import Decision, FollowUp, Goal
+from app.models.meetings import Meeting
 from app.models.workspace import TreeNode
 
 
@@ -47,6 +48,9 @@ Your output MUST be valid JSON matching this schema:
 
 Rules:
 - Top priorities: EXACTLY 3 items, derived from quarter goals, open work, AND today's meetings
+- **CRITICAL: If "Previous Brief Priority Completion" is provided, NEVER repeat any priority marked [DONE].
+  Those tasks are finished. Generate NEW priorities based on what remains in goals, follow-ups, and context.
+  If ALL previous priorities are [DONE], the user has made great progress — find the NEXT most important work.**
 - **suggested_plan MUST explicitly name every meeting from "Today's Calendar" with its time**
   e.g., "9:00 — Morning sync with engineering, then 2 hours of focus work before the 11:00 Design review"
 - Ground every claim in the provided profile, org context, memories, calendar, or files
@@ -106,6 +110,93 @@ async def _load_recent_files(db: AsyncSession, user_id: str, limit: int = 15) ->
         }
         for n in nodes
     ]
+
+
+async def _load_recent_meetings(
+    db: AsyncSession, user_id: str, lookback_hours: int = 30
+) -> dict[str, Any]:
+    """Surface yesterday's finalized meetings with their decisions and action items.
+
+    Lookback covers ~30h so the morning brief catches meetings from the prior
+    afternoon as well as the previous evening.
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=lookback_hours)
+    meetings_result = await db.execute(
+        select(Meeting)
+        .where(
+            Meeting.user_id == user_id,
+            Meeting.finalized_at.isnot(None),
+            Meeting.finalized_at >= cutoff,
+        )
+        .order_by(Meeting.finalized_at.desc())
+        .limit(10)
+    )
+    finalized = meetings_result.scalars().all()
+
+    draft_result = await db.execute(
+        select(Meeting)
+        .where(
+            Meeting.user_id == user_id,
+            Meeting.status == "draft",
+            Meeting.created_at >= cutoff,
+        )
+        .order_by(Meeting.created_at.desc())
+        .limit(5)
+    )
+    drafts = draft_result.scalars().all()
+
+    refs = [f"meeting:{m.id}" for m in finalized]
+    decisions: list[Decision] = []
+    follow_ups: list[FollowUp] = []
+    if refs:
+        d_res = await db.execute(
+            select(Decision).where(
+                Decision.user_id == user_id,
+                Decision.source_ref.in_(refs),
+            )
+        )
+        decisions = list(d_res.scalars().all())
+        f_res = await db.execute(
+            select(FollowUp).where(
+                FollowUp.user_id == user_id,
+                FollowUp.source_ref.in_(refs),
+            )
+        )
+        follow_ups = list(f_res.scalars().all())
+
+    return {
+        "finalized": [
+            {
+                "id": m.id,
+                "title": m.title,
+                "finalized_at": m.finalized_at.isoformat() if m.finalized_at else None,
+                "decisions_extracted": m.decisions_extracted,
+                "follow_ups_extracted": m.follow_ups_extracted,
+            }
+            for m in finalized
+        ],
+        "drafts": [
+            {
+                "id": m.id,
+                "title": m.title,
+                "scheduled_at": m.scheduled_at.isoformat() if m.scheduled_at else None,
+            }
+            for m in drafts
+        ],
+        "decisions": [
+            {"title": d.title, "rationale": d.rationale, "source_ref": d.source_ref}
+            for d in decisions
+        ],
+        "follow_ups": [
+            {
+                "description": f.description,
+                "owner": f.owner,
+                "due_date": f.due_date.isoformat() if f.due_date else None,
+                "source_ref": f.source_ref,
+            }
+            for f in follow_ups
+        ],
+    }
 
 
 async def _find_or_create_folder(db: AsyncSession, user_id: str, folder_name: str) -> TreeNode:
@@ -223,6 +314,7 @@ async def run_daily_brief(
         )
         recent_files = await _load_recent_files(db, user_id=user_id, limit=15)
         todays_events = await _load_todays_events(db, user_id=user_id)
+        recent_meetings = await _load_recent_meetings(db, user_id=user_id)
 
         # Structured goals + followups from knowledge graph
         goals_result = await db.execute(
@@ -240,6 +332,21 @@ async def run_daily_brief(
             .limit(10)
         )
         open_followups = followups_result.scalars().all()
+
+        # Load prior brief's task completion state (exclude current run)
+        prior_run_result = await db.execute(
+            select(AgentRun)
+            .where(
+                AgentRun.user_id == user_id,
+                AgentRun.agent_name == "daily_brief",
+                AgentRun.status == "success",
+                AgentRun.id != run.id,
+                AgentRun.task_completions.isnot(None),
+            )
+            .order_by(AgentRun.started_at.desc())
+            .limit(1)
+        )
+        prior_run = prior_run_result.scalar_one_or_none()
 
         folder = await _find_or_create_folder(db, user_id=user_id, folder_name="Daily Briefs")
         yesterdays_brief = await _find_yesterdays_brief(db, user_id=user_id, folder_id=folder.id)
@@ -288,6 +395,60 @@ async def run_daily_brief(
             "## Recent Workspace Files",
             *files_lines,
         ]
+
+        finalized_meetings = recent_meetings.get("finalized") or []
+        draft_meetings = recent_meetings.get("drafts") or []
+        meeting_decisions = recent_meetings.get("decisions") or []
+        meeting_followups = recent_meetings.get("follow_ups") or []
+        if finalized_meetings or draft_meetings or meeting_decisions or meeting_followups:
+            section: list[str] = ["", "## Recent Meetings"]
+            if finalized_meetings:
+                section.append("**Finalized:**")
+                for m in finalized_meetings:
+                    section.append(
+                        f"- {m['title']} (decisions: {m['decisions_extracted']}, "
+                        f"action items: {m['follow_ups_extracted']})"
+                    )
+            if draft_meetings:
+                section.append("**Drafts awaiting finalize:**")
+                for m in draft_meetings:
+                    section.append(f"- {m['title']}")
+            if meeting_decisions:
+                section.append("**Decisions captured:**")
+                for d in meeting_decisions[:8]:
+                    section.append(
+                        f"- {d['title']}" + (f" — {d['rationale']}" if d.get("rationale") else "")
+                    )
+            if meeting_followups:
+                section.append("**Action items from meetings:**")
+                for f in meeting_followups[:8]:
+                    bits = [f["description"]]
+                    if f.get("owner"):
+                        bits.append(f"@{f['owner']}")
+                    if f.get("due_date"):
+                        bits.append(f"due {f['due_date']}")
+                    section.append("- " + " · ".join(bits))
+            user_prompt_parts.extend(section)
+        if prior_run and prior_run.output_payload:
+            prior_priorities = prior_run.output_payload.get("top_priorities", [])
+            prior_completions = prior_run.task_completions or [False] * len(prior_priorities)
+            if prior_priorities:
+                done_items = []
+                not_done_items = []
+                for i, p in enumerate(prior_priorities):
+                    done = prior_completions[i] if i < len(prior_completions) else False
+                    if done:
+                        done_items.append(f"- [DONE] {p}")
+                    else:
+                        not_done_items.append(f"- [NOT DONE] {p}")
+                completion_lines = done_items + not_done_items
+                user_prompt_parts.extend([
+                    "",
+                    "## Previous Brief Priority Completion",
+                    "**IMPORTANT: Do NOT repeat any [DONE] item below as a new priority. They are finished.**",
+                    *completion_lines,
+                ])
+
         if yesterdays_brief:
             user_prompt_parts.extend(
                 [

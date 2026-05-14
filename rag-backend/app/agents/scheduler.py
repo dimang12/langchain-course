@@ -19,6 +19,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
 from app.agents.daily_brief import run_daily_brief
+from app.agents.prioritizer import run_prioritizer
 from app.config import settings
 from app.connectors import google_calendar
 from app.database import async_session
@@ -82,7 +83,13 @@ async def daily_brief_all_users() -> None:
             if local_hour != 8:
                 continue
 
-            logger.info("Running daily_brief for user %s (tz=%s)", user.id, tz_name)
+            logger.info("Running prioritizer for user %s (tz=%s)", user.id, tz_name)
+            try:
+                await run_prioritizer(user_id=user.id, db=db, trigger="scheduled")
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("prioritizer failed for user %s: %s", user.id, exc)
+            # Legacy daily brief still runs alongside for transition; it can
+            # be removed once the prioritizer has earned its keep.
             try:
                 await run_daily_brief(user_id=user.id, db=db, trigger="scheduled")
             except Exception as exc:  # noqa: BLE001

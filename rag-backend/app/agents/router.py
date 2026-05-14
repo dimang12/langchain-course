@@ -7,11 +7,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from datetime import datetime
+
 from app.agents.daily_brief import run_daily_brief
 from app.agents.notifications import hub
+from app.agents.prioritizer import run_prioritizer
 from app.auth.jwt_handler import get_current_user, verify_token
 from app.database import get_db
 from app.models.agent_run import AgentRun
+from app.models.todos import Todo
 from app.models.user import User
 
 router = APIRouter()
@@ -19,6 +23,10 @@ router = APIRouter()
 
 class RatingRequest(BaseModel):
     rating: int = Field(..., ge=1, le=5)
+
+
+class TaskCompletionRequest(BaseModel):
+    completed: bool = True
 
 
 def _agent_run_to_dict(run: AgentRun) -> dict:
@@ -29,9 +37,11 @@ def _agent_run_to_dict(run: AgentRun) -> dict:
         "status": run.status,
         "output_node_id": run.output_node_id,
         "output_payload": run.output_payload,
+        "recommendations": run.recommendations,
         "error_message": run.error_message,
         "duration_ms": run.duration_ms,
         "user_rating": run.user_rating,
+        "task_completions": run.task_completions,
         "started_at": run.started_at.isoformat(),
         "completed_at": run.completed_at.isoformat() if run.completed_at else None,
     }
@@ -47,6 +57,16 @@ async def trigger_daily_brief(
     Useful for testing and for "give me a brief now" UX.
     """
     run = await run_daily_brief(user_id=user.id, db=db, trigger="manual")
+    return _agent_run_to_dict(run)
+
+
+@router.post("/prioritizer/run")
+async def trigger_prioritizer(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manually run the Prioritizer agent — produces Top-3 with evidence refs."""
+    run = await run_prioritizer(user_id=user.id, db=db, trigger="manual")
     return _agent_run_to_dict(run)
 
 
@@ -103,6 +123,58 @@ async def rate_run(
         raise HTTPException(status_code=404, detail="Agent run not found")
 
     run.user_rating = payload.rating
+    await db.commit()
+    await db.refresh(run)
+    return _agent_run_to_dict(run)
+
+
+@router.patch("/runs/{run_id}/tasks/{task_index}")
+async def toggle_task_completion(
+    run_id: str,
+    task_index: int,
+    payload: TaskCompletionRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Toggle completion of a specific priority in a brief or prioritizer run.
+
+    For Prioritizer runs where the priority maps to a `Todo` (via `todo_id`),
+    we also update `Todo.completed_at` so checking a priority finishes the
+    underlying task. AgentRun.task_completions stays in sync either way.
+    """
+    result = await db.execute(
+        select(AgentRun).where(
+            AgentRun.id == run_id,
+            AgentRun.user_id == user.id,
+        )
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        raise HTTPException(status_code=404, detail="Agent run not found")
+
+    payload_dict = run.output_payload or {}
+    # Prioritizer format: structured priorities. Legacy daily_brief: flat list.
+    structured_priorities = payload_dict.get("priorities") or []
+    legacy_priorities = payload_dict.get("top_priorities") or []
+    total = len(structured_priorities) if structured_priorities else len(legacy_priorities)
+    if task_index < 0 or task_index >= total:
+        raise HTTPException(status_code=400, detail="Invalid task index")
+
+    completions = list(run.task_completions or [False] * total)
+    while len(completions) < total:
+        completions.append(False)
+    completions[task_index] = payload.completed
+    run.task_completions = completions
+
+    # Cascade to the underlying Todo when the priority references one.
+    if structured_priorities:
+        item = structured_priorities[task_index]
+        todo_id = item.get("todo_id") if isinstance(item, dict) else None
+        if todo_id:
+            todo = await db.get(Todo, todo_id)
+            if todo is not None and todo.user_id == user.id:
+                todo.completed_at = datetime.utcnow() if payload.completed else None
+
     await db.commit()
     await db.refresh(run)
     return _agent_run_to_dict(run)

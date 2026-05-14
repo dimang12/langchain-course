@@ -1,4 +1,5 @@
 import json
+import logging
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -10,6 +11,7 @@ from app.models.user import User
 from app.models.conversation import Conversation, Message
 from app.chat.rag_chain import RAGChain
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -111,35 +113,7 @@ async def query(
 
     tool_actions = []
 
-    response = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=messages,
-        tools=WORKSPACE_TOOLS,
-        tool_choice="auto",
-        max_tokens=4096,
-        temperature=0.3,
-    )
-
-    msg = response.choices[0].message
-
-    while msg.tool_calls:
-        messages.append(msg)
-        for tool_call in msg.tool_calls:
-            args = json.loads(tool_call.function.arguments)
-            tool_result = await execute_tool(
-                tool_call.function.name, args, user.id, db
-            )
-            tool_actions.append({
-                "tool": tool_call.function.name,
-                "args": args,
-                "result": tool_result[:200],
-            })
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": tool_result,
-            })
-
+    try:
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
@@ -148,9 +122,48 @@ async def query(
             max_tokens=4096,
             temperature=0.3,
         )
-        msg = response.choices[0].message
 
-    answer = msg.content or "I couldn't generate a response."
+        msg = response.choices[0].message
+        max_rounds = 10
+
+        while msg.tool_calls and max_rounds > 0:
+            max_rounds -= 1
+            messages.append(msg)
+            for tool_call in msg.tool_calls:
+                args = json.loads(tool_call.function.arguments)
+                logger.info("Tool call: %s(%s)", tool_call.function.name, args)
+                try:
+                    tool_result = await execute_tool(
+                        tool_call.function.name, args, user.id, db
+                    )
+                except Exception as tool_err:
+                    logger.exception("Tool %s failed", tool_call.function.name)
+                    tool_result = f"Error executing {tool_call.function.name}: {tool_err}"
+                tool_actions.append({
+                    "tool": tool_call.function.name,
+                    "args": args,
+                    "result": tool_result[:200],
+                })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": tool_result,
+                })
+
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                tools=WORKSPACE_TOOLS,
+                tool_choice="auto",
+                max_tokens=4096,
+                temperature=0.3,
+            )
+            msg = response.choices[0].message
+
+        answer = msg.content or "I couldn't generate a response."
+    except Exception as e:
+        logger.exception("Chat query failed")
+        answer = f"Sorry, something went wrong: {e}"
 
     assistant_msg = Message(
         conversation_id=conversation.id,

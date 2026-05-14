@@ -43,15 +43,34 @@ class WorkspaceNotifier extends StateNotifier<WorkspaceState> {
   WorkspaceNotifier(this._apiClient) : super(const WorkspaceState());
 
   Future<void> loadTree() async {
+    final expandedIds = _collectExpandedIds(state.tree);
     state = state.copyWith(isLoading: true, clearError: true);
     try {
       final response = await _apiClient.dio.get('/workspace/tree');
       final nodes = (response.data as List)
           .map((e) => TreeNodeModel.fromJson(e as Map<String, dynamic>))
           .toList();
-      state = state.copyWith(tree: _sortNodes(nodes, state.sortMode), isLoading: false);
+      final sorted = _sortNodes(nodes, state.sortMode);
+      _restoreExpandedIds(sorted, expandedIds);
+      state = state.copyWith(tree: sorted, isLoading: false);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: 'Failed to load workspace');
+    }
+  }
+
+  Set<String> _collectExpandedIds(List<TreeNodeModel> nodes) {
+    final ids = <String>{};
+    for (final node in nodes) {
+      if (node.isExpanded) ids.add(node.id);
+      if (node.children.isNotEmpty) ids.addAll(_collectExpandedIds(node.children));
+    }
+    return ids;
+  }
+
+  void _restoreExpandedIds(List<TreeNodeModel> nodes, Set<String> expandedIds) {
+    for (final node in nodes) {
+      if (expandedIds.contains(node.id)) node.isExpanded = true;
+      if (node.children.isNotEmpty) _restoreExpandedIds(node.children, expandedIds);
     }
   }
 
@@ -121,6 +140,10 @@ class WorkspaceNotifier extends StateNotifier<WorkspaceState> {
     } else {
       state = state.copyWith(selectedFolderId: folderId);
     }
+  }
+
+  void clearFolderSelection() {
+    state = state.copyWith(clearSelectedFolder: true);
   }
 
   void setSortMode(String mode) {

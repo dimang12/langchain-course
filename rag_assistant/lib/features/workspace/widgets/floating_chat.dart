@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import '../../../shared/theme/glass_theme.dart';
 import '../../chat/providers/chat_provider.dart';
 import '../../chat/models/message_model.dart';
 import '../providers/tab_provider.dart';
@@ -16,25 +17,34 @@ class FloatingChatFAB extends ConsumerWidget {
     if (isVisible) return const SizedBox();
 
     return Positioned(
-      bottom: 20,
-      right: 20,
+      bottom: 8,
+      right: 8,
       child: GestureDetector(
         onTap: () => ref.read(chatVisibleProvider.notifier).state = true,
         child: Container(
           width: 56,
           height: 56,
           decoration: BoxDecoration(
-            color: const Color(0xFF6c5ce7),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [GlassTheme.accent, GlassTheme.accentDeep],
+            ),
             shape: BoxShape.circle,
             boxShadow: [
+              const BoxShadow(
+                color: Color(0x20302050),
+                blurRadius: 1,
+                offset: Offset(0, 1),
+              ),
               BoxShadow(
-                  color: const Color(0xFF6c5ce7).withValues(alpha: 0.4),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4))
+                color: GlassTheme.accentDeep.withValues(alpha: 0.5),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
             ],
           ),
-          child: const Icon(Icons.chat_bubble_rounded,
-              color: Colors.white, size: 24),
+          child: const Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 24),
         ),
       ),
     );
@@ -45,8 +55,7 @@ class FloatingChatWindow extends ConsumerStatefulWidget {
   const FloatingChatWindow({super.key});
 
   @override
-  ConsumerState<FloatingChatWindow> createState() =>
-      _FloatingChatWindowState();
+  ConsumerState<FloatingChatWindow> createState() => _FloatingChatWindowState();
 }
 
 class _FloatingChatWindowState extends ConsumerState<FloatingChatWindow> {
@@ -99,25 +108,20 @@ class _FloatingChatWindowState extends ConsumerState<FloatingChatWindow> {
       child: Material(
         color: Colors.transparent,
         child: Container(
-          width: 380,
-          height: 510,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.92),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
-            boxShadow: [
-              BoxShadow(
-                  color: const Color(0xFF6c5ce7).withValues(alpha: 0.15),
-                  blurRadius: 32,
-                  offset: const Offset(0, 8))
-            ],
+          width: 360,
+          height: 480,
+          decoration: GlassTheme.glassDecoration(
+            background: const Color(0xE6FCFBFF),
           ),
-          child: Column(
-            children: [
-              _buildHeader(),
-              Expanded(child: _buildMessageList(chatState)),
-              _buildInput(chatState),
-            ],
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(GlassTheme.panelRadius),
+            child: Column(
+              children: [
+                _buildHeader(),
+                Expanded(child: _buildMessageList(chatState)),
+                _buildInput(chatState),
+              ],
+            ),
           ),
         ),
       ),
@@ -128,33 +132,33 @@ class _FloatingChatWindowState extends ConsumerState<FloatingChatWindow> {
     return GestureDetector(
       onPanUpdate: (details) => setState(() => _position += details.delta),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
-              colors: [Color(0xFF6c5ce7), Color(0xFFa29bfe)]),
-          borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+          border: Border(bottom: BorderSide(color: GlassTheme.line)),
         ),
         child: Row(
           children: [
-            const Icon(Icons.smart_toy, color: Colors.white, size: 18),
-            const SizedBox(width: 8),
-            const Text('AI Assistant',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14)),
+            // Spinning orb
+            const _AiOrb(),
+            const SizedBox(width: 10),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('AI Assistant', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: GlassTheme.ink)),
+                Text('online', style: TextStyle(fontSize: 11, color: GlassTheme.ink3)),
+              ],
+            ),
             const Spacer(),
-            _headerIcon(Icons.add_comment, 'New conversation', () {
+            _HeaderBtn(icon: Icons.add_comment, tooltip: 'New conversation', onTap: () {
               ref.read(chatProvider.notifier).newConversation();
             }),
-            const SizedBox(width: 8),
-            _headerIcon(Icons.open_in_new, 'Open as tab', () {
+            const SizedBox(width: 2),
+            _HeaderBtn(icon: Icons.open_in_new, tooltip: 'Open as tab', onTap: () {
               ref.read(tabProvider.notifier).openChatTab();
               ref.read(chatVisibleProvider.notifier).state = false;
             }),
-            const SizedBox(width: 8),
-            _headerIcon(Icons.close, 'Close', () {
+            const SizedBox(width: 2),
+            _HeaderBtn(icon: Icons.close, tooltip: 'Close', onTap: () {
               ref.read(chatVisibleProvider.notifier).state = false;
             }),
           ],
@@ -169,12 +173,9 @@ class _FloatingChatWindowState extends ConsumerState<FloatingChatWindow> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.smart_toy,
-                size: 40,
-                color: const Color(0xFF6c5ce7).withValues(alpha: 0.3)),
+            Icon(Icons.smart_toy, size: 40, color: GlassTheme.accent.withValues(alpha: 0.3)),
             const SizedBox(height: 8),
-            Text('Ask me about your documents',
-                style: TextStyle(color: Colors.grey.shade400, fontSize: 14)),
+            const Text('Ask me about your documents', style: TextStyle(color: GlassTheme.ink3, fontSize: 14)),
           ],
         ),
       );
@@ -182,31 +183,37 @@ class _FloatingChatWindowState extends ConsumerState<FloatingChatWindow> {
 
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(18),
       itemCount: chatState.messages.length + (chatState.isLoading ? 1 : 0),
       itemBuilder: (context, index) {
-        if (index == chatState.messages.length) {
-          return _buildLoadingIndicator();
-        }
+        if (index == chatState.messages.length) return _buildLoadingIndicator();
         return _buildMessage(chatState.messages[index]);
       },
     );
   }
 
   Widget _buildLoadingIndicator() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xCCFFFFFF),
+        border: Border.all(color: GlassTheme.glassBorder),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(16),
+          topRight: Radius.circular(16),
+          bottomLeft: Radius.circular(4),
+          bottomRight: Radius.circular(16),
+        ),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Color(0xFF6c5ce7))),
-          const SizedBox(width: 8),
-          Text('Thinking...',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+          ...List.generate(3, (i) => Container(
+            width: 6, height: 6,
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            decoration: BoxDecoration(shape: BoxShape.circle, color: GlassTheme.accent.withValues(alpha: 0.6)),
+          )),
         ],
       ),
     );
@@ -216,22 +223,33 @@ class _FloatingChatWindowState extends ConsumerState<FloatingChatWindow> {
     return Align(
       alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
+        margin: const EdgeInsets.symmetric(vertical: 7),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: const BoxConstraints(maxWidth: 310),
+        constraints: const BoxConstraints(maxWidth: 300),
         decoration: BoxDecoration(
           gradient: msg.isUser
               ? const LinearGradient(
-                  colors: [Color(0xFF6c5ce7), Color(0xFFa29bfe)])
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [GlassTheme.accent, GlassTheme.accentDeep],
+                )
               : null,
-          color: msg.isUser ? null : Colors.white,
+          color: msg.isUser ? null : const Color(0xCCFFFFFF),
           borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(14),
-            topRight: const Radius.circular(14),
-            bottomLeft: Radius.circular(msg.isUser ? 14 : 4),
-            bottomRight: Radius.circular(msg.isUser ? 4 : 14),
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(msg.isUser ? 16 : 4),
+            bottomRight: Radius.circular(msg.isUser ? 4 : 16),
           ),
-          border: msg.isUser ? null : Border.all(color: Colors.grey.shade200),
+          border: msg.isUser
+              ? null
+              : Border.all(color: GlassTheme.glassBorder),
+          boxShadow: msg.isUser
+              ? [
+                  const BoxShadow(color: Color(0x20302050), blurRadius: 1, offset: Offset(0, 1)),
+                  BoxShadow(color: GlassTheme.accentDeep.withValues(alpha: 0.4), blurRadius: 14, offset: const Offset(0, 3)),
+                ]
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -239,56 +257,48 @@ class _FloatingChatWindowState extends ConsumerState<FloatingChatWindow> {
             if (!msg.isUser && msg.toolActions.isNotEmpty) ...[
               ...msg.toolActions.map((action) => Container(
                     margin: const EdgeInsets.only(bottom: 6),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF6c5ce7)
-                          .withValues(alpha: 0.06),
+                      color: GlassTheme.accentSoft.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: const Color(0xFF6c5ce7)
-                              .withValues(alpha: 0.15)),
+                      border: Border.all(color: GlassTheme.accentSoft.withValues(alpha: 0.5)),
                     ),
-                    child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(_toolIcon(action.tool),
-                              size: 12,
-                              color: const Color(0xFF6c5ce7)),
-                          const SizedBox(width: 6),
-                          Flexible(
-                              child: Text(action.displayName,
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF6c5ce7)))),
-                        ]),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(_toolIcon(action.tool), size: 12, color: GlassTheme.accentDeep),
+                      const SizedBox(width: 6),
+                      Flexible(child: Text(action.displayName, style: const TextStyle(fontSize: 12, color: GlassTheme.accentDeep))),
+                    ]),
                   )),
             ],
             if (msg.isUser)
-              Text(msg.content,
-                  style: const TextStyle(fontSize: 14, color: Colors.white))
+              Text(msg.content, style: const TextStyle(fontSize: 13.5, color: Colors.white, height: 1.5))
             else
               MarkdownBody(
                 data: msg.content,
                 selectable: true,
                 styleSheet: MarkdownStyleSheet(
-                  p: const TextStyle(fontSize: 14, color: Color(0xFF2d3436), height: 1.5),
-                  h1: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF2d3436)),
-                  h2: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Color(0xFF2d3436)),
-                  h3: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF2d3436)),
-                  code: TextStyle(fontSize: 13, fontFamily: 'monospace', backgroundColor: Colors.grey.shade100, color: const Color(0xFF2d3436)),
+                  p: const TextStyle(fontSize: 13.5, color: GlassTheme.ink, height: 1.5),
+                  h1: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: GlassTheme.ink),
+                  h2: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: GlassTheme.ink),
+                  h3: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: GlassTheme.ink),
+                  code: const TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                    backgroundColor: Color(0x0A000000),
+                    color: GlassTheme.accentDeep,
+                  ),
                   codeblockDecoration: BoxDecoration(
-                    color: Colors.grey.shade100,
+                    color: const Color(0x0A000000),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   codeblockPadding: const EdgeInsets.all(12),
-                  listBullet: const TextStyle(fontSize: 14, color: Color(0xFF2d3436)),
-                  blockquoteDecoration: BoxDecoration(
-                    border: Border(left: BorderSide(color: Colors.grey.shade300, width: 3)),
+                  listBullet: const TextStyle(fontSize: 13.5, color: GlassTheme.ink),
+                  blockquoteDecoration: const BoxDecoration(
+                    border: Border(left: BorderSide(color: GlassTheme.line, width: 3)),
                   ),
                   blockquotePadding: const EdgeInsets.only(left: 12),
-                  strong: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF2d3436)),
-                  em: const TextStyle(fontStyle: FontStyle.italic, color: Color(0xFF2d3436)),
+                  strong: const TextStyle(fontWeight: FontWeight.w700, color: GlassTheme.ink),
+                  em: const TextStyle(fontStyle: FontStyle.italic, color: GlassTheme.ink),
                 ),
               ),
             if (msg.sources.isNotEmpty) ...[
@@ -298,36 +308,19 @@ class _FloatingChatWindowState extends ConsumerState<FloatingChatWindow> {
                 runSpacing: 4,
                 children: msg.sources.map((source) {
                   final filename = source.split('/').last;
-                  return InkWell(
-                    onTap: () {},
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: msg.isUser
-                            ? Colors.white.withValues(alpha: 0.2)
-                            : const Color(0xFF6c5ce7)
-                                .withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.description,
-                              size: 11,
-                              color: msg.isUser
-                                  ? Colors.white70
-                                  : const Color(0xFF6c5ce7)),
-                          const SizedBox(width: 4),
-                          Text(filename,
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: msg.isUser
-                                      ? Colors.white70
-                                      : const Color(0xFF6c5ce7))),
-                        ],
-                      ),
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: msg.isUser
+                          ? const Color(0x33FFFFFF)
+                          : GlassTheme.accentSoft.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(6),
                     ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.description, size: 10, color: msg.isUser ? Colors.white70 : GlassTheme.accentDeep),
+                      const SizedBox(width: 4),
+                      Text(filename, style: TextStyle(fontSize: 11, color: msg.isUser ? Colors.white70 : GlassTheme.accentDeep)),
+                    ]),
                   );
                 }).toList(),
               ),
@@ -340,51 +333,57 @@ class _FloatingChatWindowState extends ConsumerState<FloatingChatWindow> {
 
   Widget _buildInput(ChatState chatState) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: Colors.grey.shade200))),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: const BoxDecoration(
+        color: Color(0x80FFFFFF),
+        border: Border(top: BorderSide(color: GlassTheme.line)),
+      ),
       child: Row(
         children: [
           Expanded(
-            child: TextField(
-              controller: _controller,
-              decoration: InputDecoration(
-                hintText: 'Ask anything...',
-                hintStyle:
-                    TextStyle(color: Colors.grey.shade400, fontSize: 14),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: Colors.grey.shade200)),
-                focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide:
-                        const BorderSide(color: Color(0xFF6c5ce7))),
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 10),
-                isDense: true,
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xCCFFFFFF),
+                borderRadius: BorderRadius.circular(GlassTheme.inputRadius),
+                border: Border.all(color: GlassTheme.glassBorder),
               ),
-              style: const TextStyle(fontSize: 14),
-              onSubmitted: (_) => _send(),
-              enabled: !chatState.isLoading,
+              child: TextField(
+                controller: _controller,
+                decoration: const InputDecoration(
+                  hintText: 'Ask anything...',
+                  hintStyle: TextStyle(color: GlassTheme.ink3, fontSize: 13),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  isDense: true,
+                ),
+                style: const TextStyle(fontSize: 13, color: GlassTheme.ink),
+                onSubmitted: (_) => _send(),
+                enabled: !chatState.isLoading,
+              ),
             ),
           ),
           const SizedBox(width: 8),
           GestureDetector(
             onTap: chatState.isLoading ? null : _send,
             child: Container(
-              padding: const EdgeInsets.all(10),
+              width: 36, height: 36,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                    colors: chatState.isLoading
-                        ? [Colors.grey.shade300, Colors.grey.shade300]
-                        : [
-                            const Color(0xFF6c5ce7),
-                            const Color(0xFF74b9ff)
-                          ]),
-                borderRadius: BorderRadius.circular(12),
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: chatState.isLoading
+                      ? [GlassTheme.ink3, GlassTheme.ink3]
+                      : [GlassTheme.accent, GlassTheme.accentDeep],
+                ),
+                borderRadius: BorderRadius.circular(11),
+                boxShadow: chatState.isLoading
+                    ? null
+                    : [
+                        const BoxShadow(color: Color(0x20302050), blurRadius: 1, offset: Offset(0, 1)),
+                        BoxShadow(color: GlassTheme.accentDeep.withValues(alpha: 0.5), blurRadius: 14, offset: const Offset(0, 3)),
+                      ],
               ),
-              child:
-                  const Icon(Icons.send, color: Colors.white, size: 18),
+              child: const Center(child: Icon(Icons.send, color: Colors.white, size: 14)),
             ),
           ),
         ],
@@ -394,28 +393,12 @@ class _FloatingChatWindowState extends ConsumerState<FloatingChatWindow> {
 
   IconData _toolIcon(String tool) {
     switch (tool) {
-      case 'read_file':
-        return Icons.description;
-      case 'create_file':
-        return Icons.note_add;
-      case 'search_files':
-        return Icons.search;
-      case 'list_folder':
-        return Icons.folder_open;
-      default:
-        return Icons.build;
+      case 'read_file': return Icons.description;
+      case 'create_file': return Icons.note_add;
+      case 'search_files': return Icons.search;
+      case 'list_folder': return Icons.folder_open;
+      default: return Icons.build;
     }
-  }
-
-  Widget _headerIcon(IconData icon, String tooltip, VoidCallback onTap) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        child: Icon(icon,
-            color: Colors.white.withValues(alpha: 0.8), size: 16),
-      ),
-    );
   }
 
   void _send() {
@@ -425,5 +408,105 @@ class _FloatingChatWindowState extends ConsumerState<FloatingChatWindow> {
       _controller.clear();
       _scrollToBottom();
     }
+  }
+}
+
+class _HeaderBtn extends StatefulWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  const _HeaderBtn({required this.icon, required this.tooltip, required this.onTap});
+
+  @override
+  State<_HeaderBtn> createState() => _HeaderBtnState();
+}
+
+class _HeaderBtnState extends State<_HeaderBtn> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _hovered = true); }),
+      onExit: (_) => WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _hovered = false); }),
+      child: Tooltip(
+        message: widget.tooltip,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 28, height: 28,
+            decoration: BoxDecoration(
+              color: _hovered ? const Color(0xB3FFFFFF) : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(child: Icon(widget.icon, size: 14, color: GlassTheme.ink3)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AiOrb extends StatefulWidget {
+  const _AiOrb();
+
+  @override
+  State<_AiOrb> createState() => _AiOrbState();
+}
+
+class _AiOrbState extends State<_AiOrb> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Container(
+          width: 28, height: 28,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: SweepGradient(
+              transform: GradientRotation(_controller.value * 6.283),
+              colors: const [
+                GlassTheme.accent,
+                Color(0xFFE89060), // warm
+                Color(0xFF60B8E8), // cool
+                GlassTheme.accent,
+              ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: GlassTheme.accent.withValues(alpha: 0.4),
+                blurRadius: 12,
+              ),
+            ],
+          ),
+          child: Center(
+            child: Container(
+              width: 18, height: 18,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xF0FCFBFF),
+                border: Border.all(color: const Color(0x99FFFFFF), width: 1),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }

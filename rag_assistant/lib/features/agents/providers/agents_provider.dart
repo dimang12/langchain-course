@@ -24,6 +24,15 @@ class AgentsState {
     return null;
   }
 
+  AgentRunModel? get latestPrioritizer {
+    for (final run in runs) {
+      if (run.agentName == 'prioritizer' && run.status == 'success') {
+        return run;
+      }
+    }
+    return null;
+  }
+
   AgentsState copyWith({
     List<AgentRunModel>? runs,
     bool? isLoading,
@@ -80,6 +89,51 @@ class AgentsNotifier extends StateNotifier<AgentsState> {
         error: 'Failed to trigger brief: $e',
       );
       return null;
+    }
+  }
+
+  Future<AgentRunModel?> triggerPrioritizer() async {
+    state = state.copyWith(isTriggering: true, clearError: true);
+    try {
+      final response = await _apiClient.dio.post('/agents/prioritizer/run');
+      final run = AgentRunModel.fromJson(response.data as Map<String, dynamic>);
+      state = state.copyWith(
+        runs: [run, ...state.runs],
+        isTriggering: false,
+      );
+      return run;
+    } catch (e) {
+      state = state.copyWith(
+        isTriggering: false,
+        error: 'Failed to trigger prioritizer: $e',
+      );
+      return null;
+    }
+  }
+
+  Future<bool> toggleTaskCompletion(String runId, int taskIndex, bool completed) async {
+    // Optimistic update
+    state = state.copyWith(
+      runs: state.runs.map((r) {
+        if (r.id != runId) return r;
+        final completions = List<bool>.from(r.taskCompletions);
+        while (completions.length <= taskIndex) {
+          completions.add(false);
+        }
+        completions[taskIndex] = completed;
+        return r.copyWith(taskCompletions: completions);
+      }).toList(),
+    );
+    try {
+      await _apiClient.dio.patch(
+        '/agents/runs/$runId/tasks/$taskIndex',
+        data: {'completed': completed},
+      );
+      return true;
+    } catch (e) {
+      // Revert on failure
+      await loadRuns();
+      return false;
     }
   }
 

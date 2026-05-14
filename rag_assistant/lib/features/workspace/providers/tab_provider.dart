@@ -90,6 +90,17 @@ class TabNotifier extends StateNotifier<TabState> {
       if (tabId != null) setModified(tabId, false);
     } catch (_) {}
   }
+
+  /// Drop cached content for a node and bump the open tab's reloadCounter so
+  /// the file view re-mounts and fetches fresh content.
+  void forceReload(String nodeId) {
+    final newCache = Map<String, String>.from(state.contentCache);
+    newCache.remove(nodeId);
+    final newTabs = state.tabs
+        .map((t) => t.nodeId == nodeId ? t.copyWith(reloadCounter: t.reloadCounter + 1) : t)
+        .toList();
+    state = TabState(tabs: newTabs, activeTabId: state.activeTabId, contentCache: newCache);
+  }
 }
 
 final tabProvider = StateNotifierProvider<TabNotifier, TabState>((ref) {

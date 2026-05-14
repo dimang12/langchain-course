@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/agent_run_model.dart';
 import '../providers/agents_provider.dart';
@@ -52,48 +53,41 @@ class BriefCard extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
 
-            // Top priorities
+            // Top priorities (interactive checkboxes)
             if (run.topPriorities.isNotEmpty) ...[
-              Text(
-                'Top Priorities',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.3,
+              Row(
+                children: [
+                  Text(
+                    'Top Priorities',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
+                        ),
+                  ),
+                  const Spacer(),
+                  if (run.taskCompletions.where((c) => c).isNotEmpty)
+                    Text(
+                      '${run.taskCompletions.where((c) => c).length}/${run.topPriorities.length} done',
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
                     ),
+                ],
               ),
               const SizedBox(height: 8),
               ...run.topPriorities.asMap().entries.map((e) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 20,
-                        height: 20,
-                        decoration: BoxDecoration(
-                          color: primary.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          '${e.key + 1}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: primary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          e.value,
-                          style: const TextStyle(fontSize: 14, height: 1.4),
-                        ),
-                      ),
-                    ],
-                  ),
+                final isDone = e.key < run.taskCompletions.length &&
+                    run.taskCompletions[e.key];
+                return _PriorityCheckbox(
+                  index: e.key,
+                  text: e.value,
+                  isDone: isDone,
+                  primary: primary,
+                  onToggle: () {
+                    ref.read(agentsProvider.notifier).toggleTaskCompletion(
+                      run.id,
+                      e.key,
+                      !isDone,
+                    );
+                  },
                 );
               }),
               const SizedBox(height: 12),
@@ -140,9 +134,16 @@ class BriefCard extends ConsumerWidget {
             if (run.suggestedPlan != null && run.suggestedPlan!.isNotEmpty) ...[
               _sectionHeader(context, 'Suggested Plan'),
               const SizedBox(height: 6),
-              Text(
-                run.suggestedPlan!,
-                style: const TextStyle(fontSize: 13, height: 1.5),
+              MarkdownBody(
+                data: run.suggestedPlan!,
+                shrinkWrap: true,
+                styleSheet: MarkdownStyleSheet(
+                  p: TextStyle(fontSize: 13, height: 1.5, color: Colors.grey.shade800),
+                  strong: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey.shade900),
+                  listBullet: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+                  h2: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.grey.shade900),
+                  blockSpacing: 6,
+                ),
               ),
               const SizedBox(height: 12),
             ],
@@ -236,5 +237,91 @@ class BriefCard extends ConsumerWidget {
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
     return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
+  }
+}
+
+class _PriorityCheckbox extends StatefulWidget {
+  final int index;
+  final String text;
+  final bool isDone;
+  final Color primary;
+  final VoidCallback onToggle;
+
+  const _PriorityCheckbox({
+    required this.index,
+    required this.text,
+    required this.isDone,
+    required this.primary,
+    required this.onToggle,
+  });
+
+  @override
+  State<_PriorityCheckbox> createState() => _PriorityCheckboxState();
+}
+
+class _PriorityCheckboxState extends State<_PriorityCheckbox> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _hovered = true); }),
+      onExit: (_) => WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _hovered = false); }),
+      child: GestureDetector(
+        onTap: widget.onToggle,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: _hovered
+                ? widget.primary.withValues(alpha: 0.04)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: widget.isDone
+                      ? widget.primary
+                      : widget.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                alignment: Alignment.center,
+                child: widget.isDone
+                    ? const Icon(Icons.check, size: 14, color: Colors.white)
+                    : Text(
+                        '${widget.index + 1}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: widget.primary,
+                        ),
+                      ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  widget.text,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.4,
+                    decoration: widget.isDone
+                        ? TextDecoration.lineThrough
+                        : TextDecoration.none,
+                    color: widget.isDone ? Colors.grey.shade500 : null,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

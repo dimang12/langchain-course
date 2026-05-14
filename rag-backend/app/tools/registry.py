@@ -299,6 +299,113 @@ WORKSPACE_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_meeting_doc",
+            "description": (
+                "Create a structured meeting document in the workspace under the "
+                "Meetings/ folder. Use when the user wants to start taking notes "
+                "for a meeting or capture an upcoming meeting's agenda."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Meeting title (e.g., 'Q2 Planning Sync')."},
+                    "scheduled_at": {
+                        "type": "string",
+                        "description": "ISO datetime (YYYY-MM-DDTHH:MM) when the meeting occurs. Optional.",
+                    },
+                    "attendees": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of attendee names or emails. Optional.",
+                    },
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "finalize_meeting",
+            "description": (
+                "Finalize a draft meeting: parse the Notes section, extract "
+                "Decisions, FollowUps, and People into the knowledge graph, and "
+                "rewrite the doc with the structured outcomes. Use when the user "
+                "says they're done with the meeting or wants to 'wrap up'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "meeting_id": {"type": "string", "description": "Meeting ID. Optional if title_match is provided."},
+                    "title_match": {"type": "string", "description": "Fuzzy match against meeting titles. Optional if meeting_id is provided."},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_meetings",
+            "description": "List recent meetings with title, status, and date. Use when the user asks about past or upcoming meetings.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["draft", "finalized"], "description": "Filter by status. Optional."},
+                    "limit": {"type": "integer", "description": "Max meetings to return.", "default": 10},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "summarize_meeting",
+            "description": "Return the Notes + Decisions + Action Items of a meeting as a readable summary.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "meeting_id": {"type": "string", "description": "Meeting ID. Optional if title_match is provided."},
+                    "title_match": {"type": "string", "description": "Fuzzy match against meeting titles. Optional if meeting_id is provided."},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "complete_brief_task",
+            "description": (
+                "Mark one or more daily brief priorities as completed. Use when "
+                "the user says they finished a task from today's brief. Accepts "
+                "task text to fuzzy-match against current priorities, or a specific index (0-based)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_text": {
+                        "type": "string",
+                        "description": "Text of the task to mark complete (fuzzy matched against priorities).",
+                    },
+                    "task_index": {
+                        "type": "integer",
+                        "description": "0-based index of the priority to mark complete (use if text matching is ambiguous).",
+                    },
+                    "completed": {
+                        "type": "boolean",
+                        "description": "True to mark complete, false to undo.",
+                        "default": True,
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 TOOLS_INFO = [
@@ -318,4 +425,9 @@ TOOLS_INFO = [
     {"name": "create_goal", "description": "Create a new goal", "icon": "add_task"},
     {"name": "update_goal_status", "description": "Update goal status", "icon": "edit"},
     {"name": "mark_followup_done", "description": "Mark follow-up as done", "icon": "check_circle"},
+    {"name": "complete_brief_task", "description": "Mark brief priority as done", "icon": "task_alt"},
+    {"name": "create_meeting_doc", "description": "Start a structured meeting doc", "icon": "groups"},
+    {"name": "finalize_meeting", "description": "Extract decisions and follow-ups from meeting notes", "icon": "auto_awesome"},
+    {"name": "list_meetings", "description": "List recent meetings", "icon": "event_note"},
+    {"name": "summarize_meeting", "description": "Summarize a meeting", "icon": "summarize"},
 ]

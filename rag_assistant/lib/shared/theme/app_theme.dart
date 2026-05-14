@@ -1,20 +1,18 @@
 import 'package:flutter/material.dart';
+import 'glass_theme.dart';
 
 class AppTheme {
   AppTheme._();
 
-  static const _primaryColor = Color(0xFF6c5ce7);
-  static const _scaffoldBg = Color(0xFFe0e5f6);
-
   static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,
-      scaffoldBackgroundColor: _scaffoldBg,
+      scaffoldBackgroundColor: GlassTheme.canvas,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: _primaryColor,
+        seedColor: GlassTheme.accent,
         brightness: Brightness.light,
-        primary: _primaryColor,
-        surface: const Color(0xFFF8F9FE),
+        primary: GlassTheme.accent,
+        surface: const Color(0xFFFCFBFF),
       ),
       appBarTheme: const AppBarTheme(
         centerTitle: true,
@@ -23,34 +21,53 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.grey.shade200),
+          borderRadius: BorderRadius.circular(GlassTheme.inputRadius),
+          borderSide: BorderSide(color: GlassTheme.glassBorder),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.grey.shade200),
+          borderRadius: BorderRadius.circular(GlassTheme.inputRadius),
+          borderSide: BorderSide(color: GlassTheme.glassBorder),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _primaryColor),
+          borderRadius: BorderRadius.circular(GlassTheme.inputRadius),
+          borderSide: const BorderSide(color: GlassTheme.accent),
         ),
         filled: true,
-        fillColor: Colors.white,
+        fillColor: const Color(0xCCFFFFFF),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           minimumSize: const Size(double.infinity, 48),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(GlassTheme.buttonRadius),
           ),
-          backgroundColor: _primaryColor,
+          backgroundColor: GlassTheme.accent,
         ),
       ),
       cardTheme: CardThemeData(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(GlassTheme.cardRadius),
         ),
         elevation: 0,
+        color: GlassTheme.glassBg,
+      ),
+      dialogTheme: DialogThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(GlassTheme.cardRadius),
+        ),
+        backgroundColor: const Color(0xF5FCFBFF),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        color: const Color(0xF5FCFBFF),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
@@ -59,9 +76,9 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: _primaryColor,
+        seedColor: GlassTheme.accent,
         brightness: Brightness.dark,
-        primary: _primaryColor,
+        primary: GlassTheme.accent,
       ),
       appBarTheme: const AppBarTheme(
         centerTitle: true,
@@ -69,7 +86,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(GlassTheme.inputRadius),
         ),
         filled: true,
       ),
@@ -77,13 +94,13 @@ class AppTheme {
         style: FilledButton.styleFrom(
           minimumSize: const Size(double.infinity, 48),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(GlassTheme.buttonRadius),
           ),
         ),
       ),
       cardTheme: CardThemeData(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(GlassTheme.cardRadius),
         ),
         elevation: 0,
       ),
